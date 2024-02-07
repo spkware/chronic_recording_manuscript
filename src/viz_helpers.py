@@ -1,6 +1,9 @@
 import numpy as np
 from math import cos, sin, radians
-
+"""
+Utility functions for visualizing probe and shank locations in 3D space.
+Max Melin, 2024
+"""
 def rotation_matrix_from_degrees(x_rot, y_rot, z_rot):
     """Return a rotation matrix to rotate a vector in 3D space. Pass the angles in degrees, not radians."""
     alpha = radians(z_rot)
@@ -18,11 +21,11 @@ def rotation_matrix_from_degrees(x_rot, y_rot, z_rot):
                    [0, sin(gamma), cos(gamma)]])
 
     #return Rz @ Ry @ Rx
-    return Rz @ Rx @ Ry
+    return Rz @ Rx @ Ry # this is the correct order of rotations for the probe
 
 
 class Shank:
-    SHANK_DIMS_UM = np.array([70,-5000,10]) # the dimensions of the shank in um
+    SHANK_DIMS_UM = np.array([70,-10_000,10]) # the dimensions of the shank in um
     def __init__(self, tip, angles):
         self.tip = tip # [ML,AP,DV], the corner of the shank, used for drawing the shank
         self.angles = angles # [elev, spin, yaw], the angles of the shank in degrees
@@ -45,7 +48,9 @@ class Probe:
         assert probetype in Probe.VAILD_PROBETYPES.keys(), f'Invalid probetype: {probetype}'
         self.probetype = probetype
         self.origin = origin # the "true center" of the probe tip, [ML,AP,DV]
+        angles = np.array(angles)
         angles[2] = -angles[2] # rotation about z is inverted for probes
+        angles[0] = -angles[0] # rotation about x is inverted for probes
         self.angles = angles
         self.shanks = []
         self.__add_shanks()
