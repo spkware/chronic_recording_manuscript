@@ -90,4 +90,5 @@ class TargetedRegion(dj.Manual):
     ---
     -> Atlas.Region
     -> ChronicHolderType
+    hemisphere: enum('left', 'right')
     '''
