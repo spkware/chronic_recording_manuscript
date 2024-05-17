@@ -83,12 +83,18 @@ class ChronicHolderType(dj.Lookup):
                 [1, 'NP1 freely moving'],
                 [2, 'NP24 head fixed'],
                 [3, 'NP24 freely moving'],]
-@paperschema
-class TargetedRegion(dj.Manual):
+
+@cp.paperschema
+class ChronicInsertion(dj.Manual):
     definition = '''
     -> ProbeInsertion
     ---
-    -> Atlas.Region
     -> ChronicHolderType
-    hemisphere: enum('left', 'right')
     '''
+    class TargetedRegion(dj.Part):
+        definition = '''
+        -> master
+        -> Atlas.Region
+        ---
+        hemisphere: enum('left', 'right')
+        '''
