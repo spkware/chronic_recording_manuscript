@@ -50,8 +50,8 @@ class DredgeSpikeDetection(dj.Manual):
     definition = '''
     -> EphysRecording.ProbeSetting
     ---
-     -> [nullable] AnalysisFile.proj(peak_locations = 'file_path',spikes_locations_storage='storage')
-    -> [nullable] AnalysisFile.proj(peaks = 'file_path',spikes_storage='storage')
+     -> [nullable] AnalysisFile.proj(peak_locations = 'file_path',peak_locations_storage='storage')
+    -> [nullable] AnalysisFile.proj(peaks = 'file_path',peaks_storage='storage')
     '''
     def add_dataset(self,key,associated_filepaths):
         nk = (EphysRecording.ProbeSetting & key).proj().fetch1() # if fetch1 crashes when you get 2 then drop the assert 
