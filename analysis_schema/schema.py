@@ -44,30 +44,50 @@ class SortingChannelMAD(dj.Computed):
                          average_mad = np.mean(m),
                          std_mad = np.std(m)))
 
-
 @paperschema
 class DredgeSpikeDetection(dj.Manual):
     # Table to hold which video sessions were used
     definition = '''
     -> EphysRecording.ProbeSetting
     ---
-     -> [nullable] AnalysisFile.proj(spikes_locations = 'file_path',spikes_locations_storage='storage')
-    -> [nullable] AnalysisFile.proj(spikes = 'file_path',spikes_storage='storage')
+     -> [nullable] AnalysisFile.proj(peak_locations = 'file_path',spikes_locations_storage='storage')
+    -> [nullable] AnalysisFile.proj(peaks = 'file_path',spikes_storage='storage')
     '''
     def add_dataset(self,key,associated_filepaths):
         nk = (EphysRecording.ProbeSetting & key).proj().fetch1() # if fetch1 crashes when you get 2 then drop the assert 
         dataset = dict(subject_name = key['subject_name'],
                       session_name = key['session_name'],
-                      dataset_name = 'dredge_spike_detection')
-        filekeys = AnalysisFile().upload_files(associated_filepaths,dataset)
+                      dataset_name = f'dredge_spike_detection/probe_{key["probe_num"]}')
+        filekeys = AnalysisFile().upload_files(associated_filepaths,dataset, force=False)
         # need to find which file is spike locations and which is spikes then addd them to nk
-        for f in file_keys:
-            if 'spikes_locations' in f['file_path']:
-                nk['spikes_locations'] = f['file_path']
-                nk['spikes_locations_storage'] = f['storage']
-            elif 'spikes' in f['file_path']:
-                nk['spikes'] = f['file_path']
-                nk['spikes_storage'] = f['storage']
+        for f in filekeys:
+            if 'peak_locations' in f['file_path']:
+                nk['peak_locations'] = f['file_path']
+                nk['peak_locations_storage'] = f['storage']
+            elif 'peaks' in f['file_path']:
+                nk['peaks'] = f['file_path']
+                nk['peaks_storage'] = f['storage']
             else:
                 raise(ValueError(f'Uploaded the wrong files? {filekeys} you handle the delete'))
         DredgeSpikeDetection.insert1(nk)
+
+@paperschema
+class ChronicHolderType(dj.Lookup):
+    # Table to hold the chronic holder type
+    definition = '''
+    holder_id: int
+    ---
+    description : varchar(32)
+    '''
+    contents = [[0, 'NP1 head fixed'],
+                [1, 'NP1 freely moving'],
+                [2, 'NP24 head fixed'],
+                [3, 'NP24 freely moving'],]
+@paperschema
+class TargetedRegion(dj.Manual):
+    definition = '''
+    -> ProbeInsertion
+    ---
+    -> Atlas.Region
+    -> ChronicHolderType
+    '''
