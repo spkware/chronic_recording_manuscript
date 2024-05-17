@@ -84,7 +84,7 @@ class ChronicHolderType(dj.Lookup):
                 [2, 'NP24 head fixed'],
                 [3, 'NP24 freely moving'],]
 
-@cp.paperschema
+@paperschema
 class ChronicInsertion(dj.Manual):
     definition = '''
     -> ProbeInsertion
