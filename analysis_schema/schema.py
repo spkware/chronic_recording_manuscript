@@ -26,6 +26,26 @@ class SelectedVideoSessions(dj.Manual):
             insert_video(session_key)
 
 @paperschema
+class SortingChannelMAD(dj.Computed):
+    definition = """
+    -> SpikeSorting
+    average_mad  : double
+    std_mad      : double
+    ---
+    mad          : longblob
+    """
+
+    def make(self,key):
+        seg = (SpikeSorting.Segment()*EphysRecording.ProbeSetting()*ProbeConfiguration() & key).fetch1()
+        from spks import mad
+        m = mad(seg['segment']*seg['probe_gain']).astype(np.float32)
+        self.insert1(dict(key,
+                          mad =m,
+                         average_mad = np.mean(m),
+                         std_mad = np.std(m)))
+
+
+@paperschema
 class DredgeSpikeDetection(dj.Manual):
     # Table to hold which video sessions were used
     definition = '''
