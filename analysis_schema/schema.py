@@ -59,6 +59,73 @@ class DredgeSpikeDetection(dj.Manual):
      -> [nullable] AnalysisFile.proj(peak_locations = 'file_path',peak_locations_storage='storage')
     -> [nullable] AnalysisFile.proj(peaks = 'file_path',peaks_storage='storage')
     '''
+
+    def extract_spikes(self, subject, session_name, probe_num):
+        """
+        This function will download the binary file for a probe, perform spike extraction/localization,
+        save those to .npy files, and add these files to the AnalysiFile and DredgeSpikeDetection tables.
+        """
+        import numpy as np
+        import spikeinterface.full as si
+        from spikeinterface.sortingcomponents.peak_detection import detect_peaks
+        from spikeinterface.sortingcomponents.peak_localization import localize_peaks
+        fname = 'peaks.npy'
+        fname2 = 'peak_locations.npy'
+        from labdata.utils import DEFAULT_N_JOBS
+
+        key = dict(subject_name=subject,
+                       session_name=session_name,
+                       probe_num=probe_num)
+        has_file_on_database = len(self & key) == 1
+        if has_file_on_database:
+            print('Spike detection already ran for',subject,session_name)
+            return
+            #peaks = np.load(path / fname)
+            #peak_locations = np.load(path / fname2)
+            #return peaks, peak_locations
+        else:
+            print('Running spike detection for',subject,session_name)
+            files2get = (EphysRecording().ProbeFile() & dict(probe_num=probe_num,
+                                                         subject_name=subject,
+                                                         session_name=session_name))
+            path = (File() & files2get).get()[0].parent # get files from s3 if not local
+            print(path)
+
+            # preprocessing
+            rec = si.read_cbin_ibl(path)
+            # restrict to channels with activity in this recording
+            #rec = rec.channel_slice(rec.channel_ids[:300])
+            rec = rec.channel_slice(rec.channel_ids[:-1]) # remove sync
+            rec = si.bandpass_filter(rec)
+            rec = si.phase_shift(rec)
+            rec = si.common_reference(rec)
+            noise_levels = si.get_noise_levels(rec, return_scaled=False)
+
+            peaks = detect_peaks(
+                rec,
+                method="locally_exclusive",
+                detect_threshold=-1,
+                peak_sign="both",
+                noise_levels=noise_levels,
+                n_jobs=-1,
+            )
+
+
+            peak_locations = localize_peaks(
+                rec,
+                peaks,
+                method="monopolar_triangulation",
+                #local_radius_um=75,
+                n_jobs=DEFAULT_N_JOBS,
+            )
+
+            np.save(path / fname, peaks, allow_pickle=False)
+            np.save(path / fname2, peak_locations, allow_pickle=False)
+
+            # add the files to the database
+            key = (EphysRecording.ProbeSetting & key).proj().fetch1()
+            self.add_dataset(self, key, [path / fname, path / fname2])
+
     def add_dataset(self,key,associated_filepaths):
         nk = (EphysRecording.ProbeSetting & key).proj().fetch1() # if fetch1 crashes when you get 2 then drop the assert 
         dataset = dict(subject_name = key['subject_name'],
