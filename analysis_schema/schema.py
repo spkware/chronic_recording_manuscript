@@ -69,9 +69,10 @@ class DredgeSpikeDetection(dj.Manual):
         import spikeinterface.full as si
         from spikeinterface.sortingcomponents.peak_detection import detect_peaks
         from spikeinterface.sortingcomponents.peak_localization import localize_peaks
+        from spikeinterface.core import set_global_job_kwargs
+        set_global_job_kwargs(mp_context = "fork")
         fname = 'peaks.npy'
         fname2 = 'peak_locations.npy'
-        from labdata.utils import DEFAULT_N_JOBS
 
         key = dict(subject_name=subject,
                        session_name=session_name,
@@ -100,31 +101,33 @@ class DredgeSpikeDetection(dj.Manual):
             rec = si.phase_shift(rec)
             rec = si.common_reference(rec)
             noise_levels = si.get_noise_levels(rec, return_scaled=False)
-
+            if (path/"preprocessed").exists():
+                import shutil
+                shutil.rmtree(path/"preprocessed")
+            rec_cache = rec.save(folder=path/"preprocessed", progress_bar=True, 
+                                 n_jobs=-1)
             peaks = detect_peaks(
-                rec,
+                rec_cache,
                 method="locally_exclusive",
-                detect_threshold=-1,
+                detect_threshold=6,
                 peak_sign="both",
                 noise_levels=noise_levels,
-                n_jobs=-1,
-            )
-
-
+                n_jobs=-1)
+            
             peak_locations = localize_peaks(
-                rec,
+                rec_cache,
                 peaks,
                 method="monopolar_triangulation",
                 #local_radius_um=75,
-                n_jobs=DEFAULT_N_JOBS,
-            )
-
+                n_jobs=-1)
+            import shutil
+            shutil.rmtree(path/"preprocessed")
             np.save(path / fname, peaks, allow_pickle=False)
             np.save(path / fname2, peak_locations, allow_pickle=False)
 
             # add the files to the database
             key = (EphysRecording.ProbeSetting & key).proj().fetch1()
-            self.add_dataset(self, key, [path / fname, path / fname2])
+            self.add_dataset(key, [path / fname, path / fname2])
             return [path / fname, path / fname2]
     def add_dataset(self,key,associated_filepaths):
         nk = (EphysRecording.ProbeSetting & key).proj().fetch1() # if fetch1 crashes when you get 2 then drop the assert 
