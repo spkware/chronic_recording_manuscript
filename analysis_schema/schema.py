@@ -125,7 +125,7 @@ class DredgeSpikeDetection(dj.Manual):
             # add the files to the database
             key = (EphysRecording.ProbeSetting & key).proj().fetch1()
             self.add_dataset(self, key, [path / fname, path / fname2])
-
+            return [path / fname, path / fname2]
     def add_dataset(self,key,associated_filepaths):
         nk = (EphysRecording.ProbeSetting & key).proj().fetch1() # if fetch1 crashes when you get 2 then drop the assert 
         dataset = dict(subject_name = key['subject_name'],
