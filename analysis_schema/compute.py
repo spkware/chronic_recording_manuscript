@@ -83,8 +83,8 @@ class SpikeDetectionCompute(BaseCompute):
                                                           probe_num = probe_num)
             if self.delete_results:
                 # delete results_folder
-                import shutil
-                shutil.rmtree(results_folder)
+                for p in paths:
+                    os.unlink(p)
                 # delete local files if they did not exist
                 if not self.files_existed:
                     for f in localfiles:
