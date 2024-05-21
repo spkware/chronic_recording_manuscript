@@ -4,7 +4,7 @@ from labdata.compute.utils import BaseCompute
 class SpikeDetectionCompute(BaseCompute):
     container = 'labdata-spks'
     cuda = False
-    name = 'spkdetect'
+    name = 'detect'
     url = 'http://github.com/spkware'
     def __init__(self,job_id, allow_s3 = None, delete_results = True, **kwargs):
         super(SpikeDetectionCompute,self).__init__(job_id, allow_s3 = allow_s3)
