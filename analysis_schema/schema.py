@@ -2,6 +2,12 @@ from labdata.schema import *
 
 paperschema = dj.schema('paper_2024_chronic_holder')
 
+__all__ = ['paperschema','IncludedSubjects',
+           'SelectedVideoSessions',
+           'SortingChannelMAD',
+           'DredgeSpikeDetection',
+           'ChronicHolderType',
+           'ChronicInsertion']
 @paperschema
 class IncludedSubjects(dj.Manual):
     # Lists the mice included in the study
