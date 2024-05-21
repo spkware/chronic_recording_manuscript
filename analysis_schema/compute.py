@@ -59,7 +59,7 @@ class SpikeDetectionCompute(BaseCompute):
         return datasets
         
     def _compute(self):
-        from .schema import DredgeSpikeSorting
+        from .schema import DredgeSpikeDetection
         from labdata.schema import EphysRecording
         datasets = pd.DataFrame((EphysRecording.ProbeFile() & self.dataset_key).fetch())
 
