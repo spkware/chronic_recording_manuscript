@@ -7,7 +7,9 @@ __all__ = ['paperschema','IncludedSubjects',
            'SortingChannelMAD',
            'DredgeSpikeDetection',
            'ChronicHolderType',
-           'ChronicInsertion']
+           'ChronicInsertion',
+           'DredgeMotionEstimate',
+           'DredgeParams']
 @paperschema
 class IncludedSubjects(dj.Manual):
     # Lists the mice included in the study
