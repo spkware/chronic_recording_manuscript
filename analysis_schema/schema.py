@@ -145,6 +145,80 @@ class DredgeSpikeDetection(dj.Manual):
         DredgeSpikeDetection.insert1(nk)
 
 @paperschema
+class DredgeParams(dj.Manual):
+    definition = '''
+    params_id: int
+    ---
+    min_depth: int
+    max_depth: int
+    bin_s: float
+    bin_um: float
+    win_step_um: int
+    win_scale_um: int
+    max_disp_um: int
+    '''
+
+@paperschema
+class DredgeMotionEstimate(dj.Computed):
+    definition = '''
+    -> DredgeSpikeDetection
+    -> DredgeParams
+    ---
+    shank_num: int
+    displacement: longblob
+    spatial_bin_centers_um: longblob
+    time_bin_centers_s: longblob
+    
+    '''
+    xlims = [(-1000, 175),
+             (175, 400),
+             (400, 650),
+             (650, 1200)]
+
+    def make(self, key):
+        from dredge.dredge_ap import register
+        n_shanks = (EphysRecording.ProbeSetting * Probe & key).fetch1('probe_n_shanks')
+        print(key)
+        print(n_shanks)
+        for xlim, shank in zip(self.xlims, range(n_shanks)):
+            spikes_query = (DredgeSpikeDetection & key)
+            peaks_path = (AnalysisFile & spikes_query.proj(file_path='peaks')).get()[0]
+            peak_locations_path = (AnalysisFile & spikes_query.proj(file_path='peak_locations')).get()[0]
+
+            peaks = np.load(peaks_path)
+            peak_locations = np.load(peak_locations_path)
+
+            srate = (EphysRecording.ProbeSetting() & key).fetch1('sampling_rate')
+            t_seconds = peaks['sample_index'] / srate
+            amps = np.abs(peaks['amplitude'])
+            depth_um = peak_locations['y']
+            x = peak_locations['x']
+        
+            dredge_params = (DredgeParams & key).fetch1() 
+
+            good_y = np.vstack([depth_um >= dredge_params.pop('min_depth'), depth_um <= dredge_params.pop('max_depth')])
+            good_x = np.vstack([x >= xlim[0], x <= xlim[1]])
+            inds = np.vstack([good_x, good_y])
+            inds = np.all(inds, axis=0)
+            if np.sum(inds) == 0:
+                continue
+
+            t_seconds = t_seconds[inds]
+            amps = amps[inds]
+            depth_um = depth_um[inds]
+
+            dredge_params.pop('params_id')
+            dredge_params.pop('max_disp_um')
+            motion_est, _ = register(amps, depth_um, t_seconds, **dredge_params)
+
+            key['displacement'] = motion_est.displacement
+            key['spatial_bin_centers_um'] = motion_est.spatial_bin_centers_um
+            key['time_bin_centers_s'] = motion_est.time_bin_centers_s
+            key['shank_num'] = shank
+
+            self.insert1(key)
+
+@paperschema
 class ChronicHolderType(dj.Lookup):
     # Table to hold the chronic holder type
     definition = '''
