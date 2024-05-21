@@ -10,7 +10,7 @@ class SpikeDetectionCompute(BaseCompute):
         super(SpikeDetectionCompute,self).__init__(job_id, allow_s3 = allow_s3)
         self.file_filters = ['.ap.']
         # default parameters
-        self.parameters = None
+        self.parameters = {}
         self._init_job()
         self.delete_results = delete_results
     
