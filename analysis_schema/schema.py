@@ -232,7 +232,9 @@ class ChronicHolderType(dj.Lookup):
     contents = [[0, 'NP1 head fixed'],
                 [1, 'NP1 freely moving'],
                 [2, 'NP24 head fixed'],
-                [3, 'NP24 freely moving'],]
+                [3, 'NP24 freely moving'],
+                [4, 'NP24alpha head fixed'],
+                [5, 'NP24alpha freely moving'],]
 
 @paperschema
 class ChronicInsertion(dj.Manual):
