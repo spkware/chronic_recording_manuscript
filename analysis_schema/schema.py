@@ -1,4 +1,5 @@
 from labdata.schema import *
+from dredge.dredge_ap import register
 
 paperschema = dj.schema('paper_2024_chronic_holder')
 
@@ -9,7 +10,8 @@ __all__ = ['paperschema','IncludedSubjects',
            'ChronicHolderType',
            'ChronicInsertion',
            'DredgeMotionEstimate',
-           'DredgeParams']
+           'DredgeParams',
+           'SpikeDepthLims']
 @paperschema
 class IncludedSubjects(dj.Manual):
     # Lists the mice included in the study
@@ -155,22 +157,27 @@ class DredgeParams(dj.Manual):
     definition = '''
     params_id: int
     ---
-    min_depth: int
-    max_depth: int
     bin_s: float
     bin_um: float
     win_step_um: int
     win_scale_um: int
     max_disp_um: int
     '''
-
+@paperschema
+class SpikeDepthLims(dj.Manual):
+    definition = '''
+    -> ProbeInsertion
+    ---
+    max_spike_height_um: float
+    min_spike_height_um: float
+    '''
 @paperschema
 class DredgeMotionEstimate(dj.Computed):
     definition = '''
     -> DredgeSpikeDetection
     -> DredgeParams
+    shank_num: tinyint
     ---
-    shank_num: int
     displacement: longblob
     spatial_bin_centers_um: longblob
     time_bin_centers_s: longblob
@@ -182,10 +189,7 @@ class DredgeMotionEstimate(dj.Computed):
              (650, 1200)]
 
     def make(self, key):
-        from dredge.dredge_ap import register
         n_shanks = (EphysRecording.ProbeSetting * Probe & key).fetch1('probe_n_shanks')
-        print(key)
-        print(n_shanks)
         for xlim, shank in zip(self.xlims, range(n_shanks)):
             spikes_query = (DredgeSpikeDetection & key)
             peaks_path = (AnalysisFile & spikes_query.proj(file_path='peaks')).get()[0]
@@ -200,9 +204,11 @@ class DredgeMotionEstimate(dj.Computed):
             depth_um = peak_locations['y']
             x = peak_locations['x']
         
-            dredge_params = (DredgeParams & key).fetch1() 
+            min_spike_height, max_spike_height = (DredgeParams & key).fetch1('min_spike_height_um','max_spike_height_um') 
+            print(min_spike_height, max_spike_height)
 
-            good_y = np.vstack([depth_um >= dredge_params.pop('min_depth'), depth_um <= dredge_params.pop('max_depth')])
+            #SpikeDepthLims() & key
+            good_y = np.vstack([depth_um >= min_spike_height, depth_um <= max_spike_height])
             good_x = np.vstack([x >= xlim[0], x <= xlim[1]])
             inds = np.vstack([good_x, good_y])
             inds = np.all(inds, axis=0)
@@ -215,7 +221,7 @@ class DredgeMotionEstimate(dj.Computed):
 
             dredge_params.pop('params_id')
             dredge_params.pop('max_disp_um')
-            motion_est, _ = register(amps, depth_um, t_seconds, **dredge_params)
+            motion_est, _ = register(amps, depth_um, t_seconds, pbar=False, **dredge_params)
 
             key['displacement'] = motion_est.displacement
             key['spatial_bin_centers_um'] = motion_est.spatial_bin_centers_um
@@ -223,6 +229,16 @@ class DredgeMotionEstimate(dj.Computed):
             key['shank_num'] = shank
 
             self.insert1(key)
+    
+    #def populate_subject(self,subject,dredge_params_id, n_workers=1):
+    #    from tqdm import tqdm
+    #    from multiprocessing.pool import Pool
+    #    keys = (DredgeSpikeDetection * DredgeParams & dict(subject_name=subject, params_id=dredge_params_id)).fetch('KEY')
+    #    for key in tqdm(keys):
+    #        self.insert_one_session(key)
+    #    #with Pool(n_workers) as p:
+    #    #    _ = list(tqdm(p.imap(self.make, keys), total=len(keys)))
+        
 
 @paperschema
 class ChronicHolderType(dj.Lookup):
