@@ -1,5 +1,4 @@
 from labdata.schema import *
-from dredge.dredge_ap import register
 
 paperschema = dj.schema('paper_2024_chronic_holder')
 
@@ -10,8 +9,7 @@ __all__ = ['paperschema','IncludedSubjects',
            'ChronicHolderType',
            'ChronicInsertion',
            'DredgeMotionEstimate',
-           'DredgeParams',
-           'SpikeDepthLims']
+           'DredgeParams',]
 @paperschema
 class IncludedSubjects(dj.Manual):
     # Lists the mice included in the study
@@ -63,6 +61,46 @@ class DredgeSpikeDetection(dj.Manual):
      -> [nullable] AnalysisFile.proj(peak_locations = 'file_path',peak_locations_storage='storage')
     -> [nullable] AnalysisFile.proj(peaks = 'file_path',peaks_storage='storage')
     '''
+    def get(self, key):
+        paths = (self & key).fetch1('peaks','peak_locations')
+        peak_locations_path, peaks_path = (AnalysisFile() & 'file_path IN ' + str(paths)).get()
+
+        peaks = np.load(peaks_path)
+        peak_locations = np.load(peak_locations_path)
+        return peaks, peak_locations
+        
+    def plot_raster(self, subject, session_name, probe_num, shank_num):
+        from spks.viz import plot_drift_raster
+
+        xlims = [(-1000, 175),
+                 (175, 400),
+                 (400, 650),
+                 (650, 1200)]
+
+        key = dict(subject_name=subject,
+                       session_name=session_name,
+                       probe_num=probe_num)
+        spikes_query = (DredgeSpikeDetection & key)
+        peaks_path = (AnalysisFile & spikes_query.proj(file_path='peaks')).get()[0]
+        peak_locations_path = (AnalysisFile & spikes_query.proj(file_path='peak_locations')).get()[0]
+
+        peaks = np.load(peaks_path)
+        peak_locations = np.load(peak_locations_path)
+
+        srate = (EphysRecording.ProbeSetting() & key).fetch1('sampling_rate')
+        t_seconds = peaks['sample_index'] / srate
+        amps = np.abs(peaks['amplitude'])
+        depth_um = peak_locations['y']
+        x = peak_locations['x']
+
+        good_x = np.logical_and(x >= xlims[shank_num][0], x <= xlims[shank_num][1])
+
+        t_seconds = t_seconds[good_x]
+        amps = amps[good_x]
+        depth_um = depth_um[good_x]
+            
+        plot_drift_raster(t_seconds, depth_um, amps)
+        
 
     def extract_spikes(self, subject, session_name, probe_num):
         """
@@ -163,37 +201,36 @@ class DredgeParams(dj.Manual):
     win_scale_um: int
     max_disp_um: int
     '''
+
 @paperschema
-class SpikeDepthLims(dj.Manual):
-    definition = '''
-    -> ProbeInsertion
-    ---
-    max_spike_height_um: float
-    min_spike_height_um: float
-    '''
-@paperschema
-class DredgeMotionEstimate(dj.Computed):
+class DredgeMotionEstimate(dj.Manual):
     definition = '''
     -> DredgeSpikeDetection
     -> DredgeParams
     shank_num: tinyint
     ---
     displacement: longblob
-    spatial_bin_centers_um: longblob
+    spatial_bin_centers_um = NULL : longblob
     time_bin_centers_s: longblob
-    
+    min_spike_depth_um: float           # spikes below this depth were excluded before running DREDGE
+    max_spike_depth_um: float           # spikes above this depth were excluded before running DREDGE
+ 
     '''
     xlims = [(-1000, 175),
              (175, 400),
              (400, 650),
              (650, 1200)]
 
-    def make(self, key):
+    def insert_one_session(self, key, min_spike_depth, max_spike_depth):
+        from dredge.dredge_ap import register
+        #key = key.copy()
         n_shanks = (EphysRecording.ProbeSetting * Probe & key).fetch1('probe_n_shanks')
-        for xlim, shank in zip(self.xlims, range(n_shanks)):
+        for xlim, shank, ymin, ymax in zip(self.xlims, range(n_shanks), min_spike_depth, max_spike_depth):
             spikes_query = (DredgeSpikeDetection & key)
-            peaks_path = (AnalysisFile & spikes_query.proj(file_path='peaks')).get()[0]
-            peak_locations_path = (AnalysisFile & spikes_query.proj(file_path='peak_locations')).get()[0]
+            #peaks_path = (AnalysisFile & spikes_query.proj(file_path='peaks')).get()[0]
+            #peak_locations_path = (AnalysisFile & spikes_query.proj(file_path='peak_locations')).get()[0]
+            paths = spikes_query.fetch1('peaks','peak_locations') #+ AnalysisFile & spikes_query.proj(file_path='peak_locations')
+            peak_locations_path, peaks_path = (AnalysisFile() & 'file_path IN ' + str(paths)).get()
 
             peaks = np.load(peaks_path)
             peak_locations = np.load(peak_locations_path)
@@ -204,11 +241,10 @@ class DredgeMotionEstimate(dj.Computed):
             depth_um = peak_locations['y']
             x = peak_locations['x']
         
-            min_spike_height, max_spike_height = (DredgeParams & key).fetch1('min_spike_height_um','max_spike_height_um') 
-            print(min_spike_height, max_spike_height)
+            dredge_params = (DredgeParams & key).fetch1() 
 
             #SpikeDepthLims() & key
-            good_y = np.vstack([depth_um >= min_spike_height, depth_um <= max_spike_height])
+            good_y = np.vstack([depth_um >= ymin, depth_um <= ymax])
             good_x = np.vstack([x >= xlim[0], x <= xlim[1]])
             inds = np.vstack([good_x, good_y])
             inds = np.all(inds, axis=0)
@@ -226,18 +262,29 @@ class DredgeMotionEstimate(dj.Computed):
             key['displacement'] = motion_est.displacement
             key['spatial_bin_centers_um'] = motion_est.spatial_bin_centers_um
             key['time_bin_centers_s'] = motion_est.time_bin_centers_s
+            key['min_spike_depth_um'] = ymin
+            key['max_spike_depth_um'] = ymax
             key['shank_num'] = shank
 
-            self.insert1(key)
+            self.insert1(key, skip_duplicates=True)
     
-    #def populate_subject(self,subject,dredge_params_id, n_workers=1):
-    #    from tqdm import tqdm
-    #    from multiprocessing.pool import Pool
-    #    keys = (DredgeSpikeDetection * DredgeParams & dict(subject_name=subject, params_id=dredge_params_id)).fetch('KEY')
-    #    for key in tqdm(keys):
-    #        self.insert_one_session(key)
-    #    #with Pool(n_workers) as p:
-    #    #    _ = list(tqdm(p.imap(self.make, keys), total=len(keys)))
+    def populate_subject(self,subject, probe_num, dredge_params_id, min_spike_depth=None, max_spike_depth=None, n_workers=1):
+        from tqdm import tqdm
+        from multiprocessing.pool import Pool
+        from functools import partial
+
+        keys = (DredgeSpikeDetection * DredgeParams & dict(probe_num=probe_num, subject_name=subject, params_id=dredge_params_id)).fetch('KEY')
+        keys_to_insert = []
+        for k in keys:
+            n_shanks = (EphysRecording.ProbeSetting * Probe & k).fetch1('probe_n_shanks')
+            if len(self & k) < n_shanks: # if all shanks are already in the table, skip
+                keys_to_insert.append(k)
+        #for key in tqdm(keys_to_insert):
+        #    self.insert_one_session(key, min_spike_depth, max_spike_depth)
+        #TODO: make this work so that each worker just populates one shank, rather than looping inside the worker
+        worker = partial(self.insert_one_session, min_spike_depth=min_spike_depth, max_spike_depth=max_spike_depth)
+        with Pool(n_workers) as p:
+            _ = list(tqdm(p.imap(worker, keys_to_insert), total=len(keys_to_insert)))
         
 
 @paperschema
