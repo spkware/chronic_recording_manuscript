@@ -9,7 +9,8 @@ __all__ = ['paperschema','IncludedSubjects',
            'ChronicHolderType',
            'ChronicInsertion',
            'DredgeMotionEstimate',
-           'DredgeParams',]
+           'DredgeParams',
+           'ConcatenatedSpikes']
 @paperschema
 class IncludedSubjects(dj.Manual):
     # Lists the mice included in the study
@@ -285,7 +286,83 @@ class DredgeMotionEstimate(dj.Manual):
         worker = partial(self.insert_one_session, min_spike_depth=min_spike_depth, max_spike_depth=max_spike_depth)
         with Pool(n_workers) as p:
             _ = list(tqdm(p.imap(worker, keys_to_insert), total=len(keys_to_insert)))
+
+@paperschema
+class ConcatenatedSpikes(dj.Manual):
+    definition = '''
+    -> Subject
+    -> ProbeConfiguration
+    probe_num : tinyint
+    shank_num : tinyint
+    ---
+    spike_times_s : longblob
+    spike_depths_um : longblob
+    spike_amps : longblob
+    t_start : float
+    t_end : float
+    session_breaks : longblob
+    '''
+    class IncludedRecordings(dj.Part):
+        definition = '''
+        -> master
+        ---
+        -> EphysRecording
+        '''
+    
+    class DredgeResults(dj.Part):
+        definition = '''
+        -> master
+        ---
+        displacement: longblob
+        spatial_bin_centers_um = NULL : longblob
+        time_bin_centers_s: longblob
+        min_spike_depth_um: float           # spikes below this depth were excluded before running DREDGE
+        max_spike_depth_um: float           # spikes above this depth were excluded before running DREDGE
+        '''
+    def create_entries(self, subject, session_names, probe_num, configuration_id=None, t_start=300, t_end=360, shank_min_depths=None, shank_max_depths=None, **dredge_params):
+        from schema_utils import get_concatenated_spike_data
+        from dredge.dredge_ap import register
+
+        session_names = [dict(session_name=s) for s in session_names]
+        spike_detection_keys = (Session() * cp.DredgeSpikeDetection() * EphysRecording.ProbeSetting() & dict(configuration_id=configuration_id,
+                                                                                                             probe_num=probe_num,
+                                                                                                             subject_name=subject) & session_names).proj('probe_id').fetch(order_by='session_datetime', as_dict=True)
+                                                                                 
         
+        shank, amp, depth, t, session_breaks = get_concatenated_spike_data(spike_detection_keys, t_start, t_end)
+
+        insertiondict = dict(subject_name=subject,
+                             probe_id=spike_detection_keys[0]['probe_id'],
+                             probe_num=probe_num,
+                             configuration_id=configuration_id,
+                             t_start=t_start,
+                             t_end=t_end,
+                             session_breaks=session_breaks)
+        
+        nshanks = len(np.unique(shank))
+        assert len(shank_min_depths) == nshanks == len(shank_max_depths), 'Need to provide min and max spike depths for each shank'
+
+        dredge_keys = dict()
+        for s in np.unique(shank):
+            # 1. Insert spikes for one shank
+            insertiondict['shank_num'] = s
+            insertiondict['spike_times_s'] = t[shank==s]
+            insertiondict['spike_depths_um'] = depth[shank==s]
+            insertiondict['spike_amps'] = amp[shank==s]
+            self.insert1(insertiondict)
+
+            # 2. Run Dredge for that shank and insert it
+            motion_est, _ = register(amp[shank==s], depth[shank==s], t[shank==s], pbar=False, **dredge_params)
+
+            dredge_keys['displacement'] = motion_est.displacement
+            dredge_keys['spatial_bin_centers_um'] = motion_est.spatial_bin_centers_um
+            dredge_keys['time_bin_centers_s'] = motion_est.time_bin_centers_s
+            dredge_keys['min_spike_depth_um'] = shank_min_depths[s]
+            dredge_keys['max_spike_depth_um'] = shank_max_depths[s]
+            self.DredgeResults.insert1({**insertiondict, **dredge_keys}, ignore_extra_fields=True)
+
+            # 3. Insert the included recordings
+            self.IncludedRecordings.insert([{**insertiondict, 'session_name': k['session_name']} for k in spike_detection_keys], ignore_extra_fields=True)
 
 @paperschema
 class ChronicHolderType(dj.Lookup):
