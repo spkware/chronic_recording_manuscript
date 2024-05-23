@@ -305,7 +305,7 @@ class ConcatenatedSpikes(dj.Manual):
     class IncludedRecordings(dj.Part):
         definition = '''
         -> master
-        -> concatenation_order : tinyint
+        concatenation_order : tinyint
         ---
         -> EphysRecording
         '''
@@ -317,9 +317,32 @@ class ConcatenatedSpikes(dj.Manual):
         displacement: longblob
         spatial_bin_centers_um = NULL : longblob
         time_bin_centers_s: longblob
+        spatial_bin_edges_um : longblob
+        time_bin_edges_s : longblob
         min_spike_depth_um: float           # spikes below this depth were excluded before running DREDGE
         max_spike_depth_um: float           # spikes above this depth were excluded before running DREDGE
         '''
+    
+    def plot_raster(self, key, corrected=False, overlay_dredge=False):
+        from spks.viz import plot_drift_raster
+        import matplotlib.pyplot as plt
+        spks = (self & key).fetch1()
+        if not corrected:
+            plot_drift_raster(spks['spike_times_s'],
+                              spks['spike_depths_um'],
+                              spks['spike_amps'])
+        else:
+            import dredge.motion_util as mu
+            params = (self.DredgeResults & key).fetch1()
+            motion_estimate = mu.MotionEstimate(**params)
+            depths_corrected = motion_estimate.correct_s(spks['spike_times_s'], spks['spike_depths_um'], grid=False)
+            plot_drift_raster(spks['spike_times_s'],
+                              depths_corrected,
+                              spks['spike_amps'])
+
+
+        plt.vlines(spks['session_breaks'], *plt.gca().get_ylim(), linewidth=.5, linestyles='--', colors='black', label='Session breaks')
+
     def create_entries(self, subject, session_names, probe_num, configuration_id=None, t_start=300, t_end=360, dredge_min_depths=None, dredge_max_depths=None, **dredge_params):
         from .schema_utils import get_concatenated_spike_data
         from dredge.dredge_ap import register
@@ -329,15 +352,20 @@ class ConcatenatedSpikes(dj.Manual):
                                                                                                              probe_num=probe_num,
                                                                                                              subject_name=subject) & session_names).proj('probe_id').fetch(order_by='session_datetime', as_dict=True)
                                                                                  
-        shank, amp, depth, t, session_breaks = get_concatenated_spike_data(spike_detection_keys, t_start, t_end)
 
         insertiondict = dict(subject_name=subject,
                              probe_id=spike_detection_keys[0]['probe_id'],
                              probe_num=probe_num,
                              configuration_id=configuration_id,
                              t_start=t_start,
-                             t_end=t_end,
-                             session_breaks=session_breaks,)
+                             t_end=t_end,)
+        if len(self & insertiondict) > 0:
+            print(f'Already inserted concatenated spikes for subject {subject}, probe {probe_num}, configuration {configuration_id}')
+            return
+
+        shank, amp, depth, t, session_breaks = get_concatenated_spike_data(spike_detection_keys, t_start, t_end)
+
+        insertiondict['session_breaks'] = session_breaks
         
         nshanks = len(np.unique(shank))
         dredge_min_depths = np.array(dredge_min_depths)
@@ -359,6 +387,8 @@ class ConcatenatedSpikes(dj.Manual):
             dredge_keys['displacement'] = motion_est.displacement
             dredge_keys['spatial_bin_centers_um'] = motion_est.spatial_bin_centers_um
             dredge_keys['time_bin_centers_s'] = motion_est.time_bin_centers_s
+            dredge_keys['spatial_bin_edges_um'] = motion_est.spatial_bin_edges_um
+            dredge_keys['time_bin_edges_s'] = motion_est.time_bin_edges_s
             dredge_keys['min_spike_depth_um'] = dredge_min_depths[s]
             dredge_keys['max_spike_depth_um'] = dredge_max_depths[s]
             self.DredgeResults.insert1({**insertiondict, **dredge_keys}, ignore_extra_fields=True)
@@ -367,7 +397,7 @@ class ConcatenatedSpikes(dj.Manual):
             self.IncludedRecordings.insert([{**insertiondict,
                                              'session_name': k['session_name'],
                                              'dataset_name': k['dataset_name'],
-                                             'order' : i} for i,k in enumerate(spike_detection_keys)], ignore_extra_fields=True)
+                                             'concatenation_order' : i} for i,k in enumerate(spike_detection_keys)], ignore_extra_fields=True)
 
 @paperschema
 class ChronicHolderType(dj.Lookup):
