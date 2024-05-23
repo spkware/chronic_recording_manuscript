@@ -305,6 +305,7 @@ class ConcatenatedSpikes(dj.Manual):
     class IncludedRecordings(dj.Part):
         definition = '''
         -> master
+        -> concatenation_order : tinyint
         ---
         -> EphysRecording
         '''
@@ -319,16 +320,15 @@ class ConcatenatedSpikes(dj.Manual):
         min_spike_depth_um: float           # spikes below this depth were excluded before running DREDGE
         max_spike_depth_um: float           # spikes above this depth were excluded before running DREDGE
         '''
-    def create_entries(self, subject, session_names, probe_num, configuration_id=None, t_start=300, t_end=360, shank_min_depths=None, shank_max_depths=None, **dredge_params):
-        from schema_utils import get_concatenated_spike_data
+    def create_entries(self, subject, session_names, probe_num, configuration_id=None, t_start=300, t_end=360, dredge_min_depths=None, dredge_max_depths=None, **dredge_params):
+        from .schema_utils import get_concatenated_spike_data
         from dredge.dredge_ap import register
 
         session_names = [dict(session_name=s) for s in session_names]
-        spike_detection_keys = (Session() * cp.DredgeSpikeDetection() * EphysRecording.ProbeSetting() & dict(configuration_id=configuration_id,
+        spike_detection_keys = (Session() * DredgeSpikeDetection() * EphysRecording.ProbeSetting() & dict(configuration_id=configuration_id,
                                                                                                              probe_num=probe_num,
                                                                                                              subject_name=subject) & session_names).proj('probe_id').fetch(order_by='session_datetime', as_dict=True)
                                                                                  
-        
         shank, amp, depth, t, session_breaks = get_concatenated_spike_data(spike_detection_keys, t_start, t_end)
 
         insertiondict = dict(subject_name=subject,
@@ -337,10 +337,12 @@ class ConcatenatedSpikes(dj.Manual):
                              configuration_id=configuration_id,
                              t_start=t_start,
                              t_end=t_end,
-                             session_breaks=session_breaks)
+                             session_breaks=session_breaks,)
         
         nshanks = len(np.unique(shank))
-        assert len(shank_min_depths) == nshanks == len(shank_max_depths), 'Need to provide min and max spike depths for each shank'
+        dredge_min_depths = np.array(dredge_min_depths)
+        dredge_max_depths = np.array(dredge_min_depths)
+        assert len(dredge_min_depths) == nshanks == len(dredge_max_depths), 'Need to provide min and max spike depths for each shank'
 
         dredge_keys = dict()
         for s in np.unique(shank):
@@ -357,12 +359,15 @@ class ConcatenatedSpikes(dj.Manual):
             dredge_keys['displacement'] = motion_est.displacement
             dredge_keys['spatial_bin_centers_um'] = motion_est.spatial_bin_centers_um
             dredge_keys['time_bin_centers_s'] = motion_est.time_bin_centers_s
-            dredge_keys['min_spike_depth_um'] = shank_min_depths[s]
-            dredge_keys['max_spike_depth_um'] = shank_max_depths[s]
+            dredge_keys['min_spike_depth_um'] = dredge_min_depths[s]
+            dredge_keys['max_spike_depth_um'] = dredge_max_depths[s]
             self.DredgeResults.insert1({**insertiondict, **dredge_keys}, ignore_extra_fields=True)
 
             # 3. Insert the included recordings
-            self.IncludedRecordings.insert([{**insertiondict, 'session_name': k['session_name']} for k in spike_detection_keys], ignore_extra_fields=True)
+            self.IncludedRecordings.insert([{**insertiondict,
+                                             'session_name': k['session_name'],
+                                             'dataset_name': k['dataset_name'],
+                                             'order' : i} for i,k in enumerate(spike_detection_keys)], ignore_extra_fields=True)
 
 @paperschema
 class ChronicHolderType(dj.Lookup):
