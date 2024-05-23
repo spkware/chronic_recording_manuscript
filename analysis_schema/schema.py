@@ -317,31 +317,44 @@ class ConcatenatedSpikes(dj.Manual):
         displacement: longblob
         spatial_bin_centers_um = NULL : longblob
         time_bin_centers_s: longblob
-        spatial_bin_edges_um : longblob
+        spatial_bin_edges_um : NULL : longblob
         time_bin_edges_s : longblob
         min_spike_depth_um: float           # spikes below this depth were excluded before running DREDGE
         max_spike_depth_um: float           # spikes above this depth were excluded before running DREDGE
         '''
     
-    def plot_raster(self, key, corrected=False, overlay_dredge=False):
+    def plot_raster(self, key, corrected=False, overlay_dredge=False, ax=None):
         from spks.viz import plot_drift_raster
-        import matplotlib.pyplot as plt
+        if ax is None:
+            import matplotlib.pyplot as plt
+            ax = plt.gca()
         spks = (self & key).fetch1()
+        if corrected or overlay_dredge:
+            dredge_rez = (self.DredgeResults & key).fetch1()
         if not corrected:
             plot_drift_raster(spks['spike_times_s'],
                               spks['spike_depths_um'],
                               spks['spike_amps'])
+            plt.xlable('Depth (um)')
         else:
             import dredge.motion_util as mu
-            params = (self.DredgeResults & key).fetch1()
-            motion_estimate = mu.MotionEstimate(**params)
+            motion_estimate = mu.MotionEstimate(**dredge_rez)
             depths_corrected = motion_estimate.correct_s(spks['spike_times_s'], spks['spike_depths_um'], grid=False)
             plot_drift_raster(spks['spike_times_s'],
                               depths_corrected,
                               spks['spike_amps'])
+            plt.xlable('Corrected depth (um)')
+        if overlay_dredge:
+            t = dredge_rez['time_bin_centers_s']
+            d = dredge_rez['displacement']
+            bins = dredge_rez['spatial_bin_centers_um']
+            if bins is None:
+                middle = np.mean(ax.get_ylim())
+                plt.plot(t, d + middle) # plot the displacement for rigid estimates
+            else:
+                plt.plot(t, bins + d.T) # plot the displacement for nonrigid estimates
 
-
-        plt.vlines(spks['session_breaks'], *plt.gca().get_ylim(), linewidth=.5, linestyles='--', colors='black', label='Session breaks')
+        plt.vlines(spks['session_breaks'], ax.get_ylim(), linewidth=.5, linestyles='--', colors='black', label='Session breaks')
 
     def create_entries(self, subject, session_names, probe_num, configuration_id=None, t_start=300, t_end=360, dredge_min_depths=None, dredge_max_depths=None, **dredge_params):
         from .schema_utils import get_concatenated_spike_data
