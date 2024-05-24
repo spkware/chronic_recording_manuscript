@@ -56,6 +56,7 @@ class SortingChannelMAD(dj.Computed):
 @paperschema
 class DredgeSpikeDetection(dj.Manual):
     # Table to hold which video sessions were used
+    # FIXME: This table accidentally populates a second shank for NP1's sometimes. Use channelmaps and pick the closest shank in the future.
     definition = '''
     -> EphysRecording.ProbeSetting
     ---
@@ -317,7 +318,7 @@ class ConcatenatedSpikes(dj.Manual):
         displacement: longblob
         spatial_bin_centers_um = NULL : longblob
         time_bin_centers_s: longblob
-        spatial_bin_edges_um : NULL : longblob
+        spatial_bin_edges_um = NULL : longblob
         time_bin_edges_s : longblob
         min_spike_depth_um: float           # spikes below this depth were excluded before running DREDGE
         max_spike_depth_um: float           # spikes above this depth were excluded before running DREDGE
@@ -335,15 +336,25 @@ class ConcatenatedSpikes(dj.Manual):
             plot_drift_raster(spks['spike_times_s'],
                               spks['spike_depths_um'],
                               spks['spike_amps'])
-            plt.xlable('Depth (um)')
+            plt.ylabel('Depth (um)')
         else:
             import dredge.motion_util as mu
-            motion_estimate = mu.MotionEstimate(**dredge_rez)
+            if dredge_rez['spatial_bin_centers_um'] is None:
+                motion_estimate = mu.RigidMotionEstimate(displacement=dredge_rez['displacement'],
+                                                         time_bin_edges_s=dredge_rez['time_bin_edges_s'],
+                                                         time_bin_centers_s=dredge_rez['time_bin_centers_s'])
+            else:
+                motion_estimate = mu.NonrigidMotionEstimate(displacement=dredge_rez['displacement'],
+                                                            time_bin_edges_s=dredge_rez['time_bin_edges_s'],
+                                                            spatial_bin_edges_um=dredge_rez['spatial_bin_edges_um'],
+                                                            time_bin_centers_s=dredge_rez['time_bin_centers_s'],
+                                                            spatial_bin_centers_um=dredge_rez['spatial_bin_centers_um'])
+
             depths_corrected = motion_estimate.correct_s(spks['spike_times_s'], spks['spike_depths_um'], grid=False)
             plot_drift_raster(spks['spike_times_s'],
                               depths_corrected,
                               spks['spike_amps'])
-            plt.xlable('Corrected depth (um)')
+            plt.ylabel('Corrected depth (um)')
         if overlay_dredge:
             t = dredge_rez['time_bin_centers_s']
             d = dredge_rez['displacement']
@@ -354,7 +365,7 @@ class ConcatenatedSpikes(dj.Manual):
             else:
                 plt.plot(t, bins + d.T) # plot the displacement for nonrigid estimates
 
-        plt.vlines(spks['session_breaks'], ax.get_ylim(), linewidth=.5, linestyles='--', colors='black', label='Session breaks')
+        plt.vlines(spks['session_breaks'], *ax.get_ylim(), linewidth=.5, linestyles='--', colors='black', label='Session breaks')
 
     def create_entries(self, subject, session_names, probe_num, configuration_id=None, t_start=300, t_end=360, dredge_min_depths=None, dredge_max_depths=None, **dredge_params):
         from .schema_utils import get_concatenated_spike_data
@@ -382,20 +393,24 @@ class ConcatenatedSpikes(dj.Manual):
         
         nshanks = len(np.unique(shank))
         dredge_min_depths = np.array(dredge_min_depths)
-        dredge_max_depths = np.array(dredge_min_depths)
+        dredge_max_depths = np.array(dredge_max_depths)
+        print(f'Creating entries for {nshanks} shanks')
         assert len(dredge_min_depths) == nshanks == len(dredge_max_depths), 'Need to provide min and max spike depths for each shank'
 
         dredge_keys = dict()
-        for s in np.unique(shank):
+        for i,s in enumerate(np.unique(shank)):
             # 1. Insert spikes for one shank
             insertiondict['shank_num'] = s
-            insertiondict['spike_times_s'] = t[shank==s]
+            insertiondict['spike_times_s'] = t[shank==s] # grab all spikes on shank
             insertiondict['spike_depths_um'] = depth[shank==s]
             insertiondict['spike_amps'] = amp[shank==s]
             self.insert1(insertiondict)
 
             # 2. Run Dredge for that shank and insert it
-            motion_est, _ = register(amp[shank==s], depth[shank==s], t[shank==s], pbar=False, **dredge_params)
+            # grab all spikes on shank but also restrict by depths
+            stacked = np.vstack([shank==s, depth >= dredge_min_depths[s], depth <= dredge_max_depths[s]])
+            inds = np.all(stacked, axis=0)
+            motion_est, _ = register(amp[inds], depth[inds], t[inds], pbar=False, **dredge_params)
 
             dredge_keys['displacement'] = motion_est.displacement
             dredge_keys['spatial_bin_centers_um'] = motion_est.spatial_bin_centers_um
