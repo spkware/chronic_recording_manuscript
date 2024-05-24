@@ -71,7 +71,7 @@ class DredgeSpikeDetection(dj.Manual):
         peak_locations = np.load(peak_locations_path)
         return peaks, peak_locations
         
-    def plot_raster(self, subject, session_name, probe_num, shank_num):
+    def plot_raster(self, subject, session_name, probe_num, shank_num,**kwargs):
         from spks.viz import plot_drift_raster
 
         xlims = [(-1000, 175),
@@ -89,8 +89,8 @@ class DredgeSpikeDetection(dj.Manual):
         peaks = np.load(peaks_path)
         peak_locations = np.load(peak_locations_path)
 
-        srate = (EphysRecording.ProbeSetting() & key).fetch1('sampling_rate')
-        t_seconds = peaks['sample_index'] / srate
+        srate = np.float32((EphysRecording.ProbeSetting() & key).fetch1('sampling_rate'))
+        t_seconds = peaks['sample_index'].astype(np.float32) / srate
         amps = np.abs(peaks['amplitude'])
         depth_um = peak_locations['y']
         x = peak_locations['x']
@@ -101,7 +101,7 @@ class DredgeSpikeDetection(dj.Manual):
         amps = amps[good_x]
         depth_um = depth_um[good_x]
             
-        plot_drift_raster(t_seconds, depth_um, amps)
+        plot_drift_raster(t_seconds, depth_um, amps,**kwargs)
         
 
     def extract_spikes(self, subject, session_name, probe_num):
@@ -324,7 +324,7 @@ class ConcatenatedSpikes(dj.Manual):
         max_spike_depth_um: float           # spikes above this depth were excluded before running DREDGE
         '''
     
-    def plot_raster(self, key, corrected=False, overlay_dredge=False, ax=None):
+    def plot_raster(self, key, corrected=False, overlay_dredge=False, ax=None,**kwargs):
         from spks.viz import plot_drift_raster
         if ax is None:
             import matplotlib.pyplot as plt
@@ -335,7 +335,7 @@ class ConcatenatedSpikes(dj.Manual):
         if not corrected:
             plot_drift_raster(spks['spike_times_s'],
                               spks['spike_depths_um'],
-                              spks['spike_amps'])
+                              spks['spike_amps'],**kwargs)
             plt.ylabel('Depth (um)')
         else:
             import dredge.motion_util as mu
@@ -353,7 +353,7 @@ class ConcatenatedSpikes(dj.Manual):
             depths_corrected = motion_estimate.correct_s(spks['spike_times_s'], spks['spike_depths_um'], grid=False)
             plot_drift_raster(spks['spike_times_s'],
                               depths_corrected,
-                              spks['spike_amps'])
+                              spks['spike_amps'],**kwargs)
             plt.ylabel('Corrected depth (um)')
         if overlay_dredge:
             t = dredge_rez['time_bin_centers_s']

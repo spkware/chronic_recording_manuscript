@@ -11,9 +11,9 @@ def get_concatenated_spike_data(spike_detection_keys, t_start_sec, t_end_sec):
     all_shank, all_amp, all_depth, all_t = [],[],[],[]
     for o,key in enumerate(tqdm(spike_detection_keys)):
         peaks, peak_locations = cp.DredgeSpikeDetection().get(key)
-        fs = (EphysRecording.ProbeSetting() & key).fetch1('sampling_rate')
+        fs = np.float32(EphysRecording.ProbeSetting() & key).fetch1('sampling_rate'))
 
-        t_seconds = peaks['sample_index'] / fs
+        t_seconds = np.float32(peaks['sample_index']) / fs
         amps = np.abs(peaks['amplitude'])
         depth_um = peak_locations['y']
         x = peak_locations['x']
