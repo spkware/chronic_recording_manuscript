@@ -38,3 +38,24 @@ def get_concatenated_spike_data(spike_detection_keys, t_start_sec, t_end_sec):
     all_t = np.concatenate(all_t)
     session_breaks = np.array(session_breaks[1:])
     return all_shank, all_amp, all_depth, all_t, session_breaks
+
+def decode_distance(chA,chB,device = None):
+    import torch
+    if device is None:
+        if torch.backends.mps.is_available():
+            device = 'mps'
+        elif torch.cuda.is_available():
+            device = 'cuda'
+        else:
+            device = 'cpu'
+    chA = torch.from_numpy(chA.astype('float32')).to(device)
+    chB = torch.from_numpy(chB.astype('float32')).to(device)
+    distance = torch.zeros(chA.shape)
+    from tqdm import tqdm
+    for i in tqdm(range(len(chA)-1)):
+        if np.mod(len(chB[(chB > chA[i]) & (chB < chA[i+1])]),2):
+            distance[i+1] = +1;
+        else:
+            distance[i+1] = -1;
+    
+    return np.cumsum(distance.to('cpu').numpy().flatten())

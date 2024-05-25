@@ -1,4 +1,5 @@
 from labdata.schema import *
+from .schema_utils import * 
 
 paperschema = dj.schema('paper_2024_chronic_holder')
 
@@ -10,7 +11,8 @@ __all__ = ['paperschema','IncludedSubjects',
            'ChronicInsertion',
            'DredgeMotionEstimate',
            'DredgeParams',
-           'ConcatenatedSpikes']
+           'ConcatenatedSpikes',
+           'LocomotionBehaviorTreadmill']
 @paperschema
 class IncludedSubjects(dj.Manual):
     # Lists the mice included in the study
@@ -70,7 +72,35 @@ class DredgeSpikeDetection(dj.Manual):
         peaks = np.load(peaks_path)
         peak_locations = np.load(peak_locations_path)
         return peaks, peak_locations
-        
+    
+    def get_spikes(self,shank_num = None):
+        keys = []
+        xlims = [(-1000, 175),
+                 (175, 400),
+                 (400, 650),
+                 (650, 1200)]
+        for key in self:
+            print(key)
+            paths = (DredgeSpikeDetection & key).fetch1('peaks','peak_locations')
+            peak_locations_path, peaks_path = (AnalysisFile() & 'file_path IN ' + str(paths)).get()
+
+            peaks = np.load(peaks_path)
+            peak_locations = np.load(peak_locations_path)
+            srate = np.float32((EphysRecording.ProbeSetting() & key).fetch1('sampling_rate'))
+            t_seconds = peaks['sample_index'].astype(np.float32) / srate
+            amps = np.abs(peaks['amplitude'])
+            depth_um = peak_locations['y']
+            x = peak_locations['x']
+            if shank_num is None:
+                good_x = np.arange(len(t_seconds))
+            else:
+                good_x = np.logical_and(x >= xlims[shank_num][0], x <= xlims[shank_num][1])
+            key['t_seconds'] = t_seconds[good_x]
+            key['amps'] = amps[good_x]
+            key['depth_um'] = depth_um[good_x]
+            keys.append(key)
+        return pd.DataFrame(keys)
+    
     def plot_raster(self, subject, session_name, probe_num, shank_num,**kwargs):
         from spks.viz import plot_drift_raster
 
@@ -456,3 +486,53 @@ class ChronicInsertion(dj.Manual):
         ---
         hemisphere: enum('left', 'right')
         '''
+
+@paperschema
+class LocomotionBehaviorTreadmill(dj.Manual):
+    definition = '''
+    -> EphysRecording
+    ---
+    ch_sma         : tinyint
+    ch_encoder0    : tinyint
+    ch_encoder1    : tinyint
+    cm_conversion  : double
+    time     = NULL      : longblob
+    velocity = NULL      : longblob
+    position = NULL      : longblob
+    '''
+    def insert_session(self,key, ch_sma = 7, ch_encoder0 = 4, ch_encoder1=5):
+        # select data
+        key = (Dataset() & (EphysRecording() & key)).proj().fetch1()
+        ephys = (DatasetEvents.Digital() & key & 'stream_name = "imec0"').fetch(as_dict = True)
+        srate = float((EphysRecording.ProbeSetting() & key & 'probe_num = 0').fetch1('sampling_rate'))
+        if not len(ephys):
+            print('Could not find sync for probe 0 - check session.')
+            return None
+        nidqfiles = (File() & (Dataset.DataFiles() & key & 'file_path LIKE "%.nidq.%"')).get()
+        for f in nidqfiles:
+            if str(f).endswith('.bin'):
+                from spks.spikeglx_utils import load_spikeglx_binary
+                dat,meta = load_spikeglx_binary(f)
+                from spks.sync import unpackbits_gpu
+                onsets,offsets = unpackbits_gpu(dat[:,-1])
+        from spks.sync import interp1d
+        ni_ap_interp = interp1d(onsets[ch_sma],ephys[0]['event_values'],fill_value='extrapolate')
+        # extract the encoder traces this takes a while, could probably be made faster
+        chA = ni_ap_interp(onsets[ch_encoder0])
+        chB = ni_ap_interp(onsets[ch_encoder1])    
+        position = decode_distance(chA,chB)
+        enc_time = np.arange(0,len(dat)/srate,1/200.) # 200Hz resolution
+        distance = interp1d(chA/srate, position, fill_value='extrapolate')(enc_time)
+        # smooth with a gaussian
+        from scipy.ndimage import gaussian_filter
+        factor = 600./40 # roughly the encoder_pulses per cm 
+        distance = gaussian_filter(distance,20)/factor
+        velocity = np.diff(distance)/np.diff(enc_time[:2])
+        self.insert1(dict(key,time = enc_time,
+                          velocity = velocity,
+                          position = distance,
+                          cm_conversion = factor,
+                          ch_encoder0 = ch_encoder0, 
+                          ch_encoder1 = ch_encoder1,
+                          ch_sma = ch_sma),ignore_extra_fields = True)
+        return 
