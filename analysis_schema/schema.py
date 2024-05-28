@@ -380,7 +380,7 @@ class ConcatenatedSpikes(dj.Manual):
                                                             time_bin_centers_s=dredge_rez['time_bin_centers_s'],
                                                             spatial_bin_centers_um=dredge_rez['spatial_bin_centers_um'])
 
-            depths_corrected = motion_estimate.correct_s(spks['spike_times_s'], spks['spike_depths_um'], grid=False)
+            depths_corrected = motion_estimate.correct_s(spks['spike_times_s'].astype(np.float32), spks['spike_depths_um'].astype(np.float32), grid=False)
             plot_drift_raster(spks['spike_times_s'],
                               depths_corrected,
                               spks['spike_amps'],**kwargs)
