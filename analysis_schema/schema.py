@@ -333,14 +333,13 @@ class ConcatenatedSpikes(dj.Manual):
     t_end : float
     session_breaks : longblob
     '''
-    class IncludedRecordings(dj.Part):
+    class IncludedSessions(dj.Part):
         definition = '''
         -> master
-        concatenation_order : tinyint
+        concatenation_order : smallint
         ---
         -> EphysRecording
         '''
-    
     class DredgeResults(dj.Part):
         definition = '''
         -> master
@@ -452,10 +451,10 @@ class ConcatenatedSpikes(dj.Manual):
             self.DredgeResults.insert1({**insertiondict, **dredge_keys}, ignore_extra_fields=True)
 
             # 3. Insert the included recordings
-            self.IncludedRecordings.insert([{**insertiondict,
-                                             'session_name': k['session_name'],
-                                             'dataset_name': k['dataset_name'],
-                                             'concatenation_order' : i} for i,k in enumerate(spike_detection_keys)], ignore_extra_fields=True)
+            self.IncludedSessions.insert([{**insertiondict,
+                                           'session_name': k['session_name'],
+                                           'dataset_name': k['dataset_name'],
+                                           'concatenation_order' : i} for i,k in enumerate(spike_detection_keys)], ignore_extra_fields=True)
 
 @paperschema
 class ChronicHolderType(dj.Lookup):
