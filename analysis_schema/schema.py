@@ -334,6 +334,7 @@ class ConcatenatedSpikes(dj.Manual):
     session_breaks : longblob
     '''
     class IncludedSessions(dj.Part):
+    # FIXME: make this part table depend on DredgeSpikeDetection instead of EphysRecording, so that if a spike detection is deleted, the concatenated spikes entry is also deleted
         definition = '''
         -> master
         concatenation_order : smallint
