@@ -193,7 +193,7 @@ class DredgeSpikeDetection(dj.Manual):
                 peaks,
                 method="monopolar_triangulation",
                 #local_radius_um=75,
-                n_jobs=-1)
+                n_jobs=8)
             import shutil
             shutil.rmtree(path/"preprocessed")
             np.save(path / fname, peaks, allow_pickle=False)
