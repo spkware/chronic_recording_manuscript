@@ -12,7 +12,8 @@ __all__ = ['paperschema','IncludedSubjects',
            'DredgeMotionEstimate',
            'DredgeParams',
            'ConcatenatedSpikes',
-           'LocomotionBehaviorTreadmill']
+           'LocomotionBehaviorTreadmill',
+           'IBLMatchedInsertion',]
 @paperschema
 class IncludedSubjects(dj.Manual):
     # Lists the mice included in the study
@@ -536,3 +537,14 @@ class LocomotionBehaviorTreadmill(dj.Manual):
                           ch_encoder1 = ch_encoder1,
                           ch_sma = ch_sma),ignore_extra_fields = True)
         return 
+
+@paperschema
+class IBLMatchedInsertion(dj.Manual):
+    definition = '''
+    -> ProbeInsertion
+    ---
+    pid : varchar(255)
+    '''
+    def return_schema_session(self):
+        # TODO: will give the query for the corresponding ephys recording in the database
+        raise NotImplementedError()
