@@ -78,7 +78,7 @@ class SpikeDetectionCompute(BaseCompute):
                 raise(ValueError(f'Could not find ap.cbin files for probe {probe_num}'))
             localfiles = self.get_files(dset, allowed_extensions = ['.ap.bin'])
             probepath = list(filter(lambda x: str(x).endswith('bin'),localfiles))
-            paths = DredgeSpikeDetection().extract_spikes(subject = self.dataset_key['subject_name'],
+            paths = DredgeSpikeDetection().extract_spikes(subject_name = self.dataset_key['subject_name'],
                                                           session_name = self.dataset_key['session_name'],
                                                           probe_num = probe_num)
             if self.delete_results:
