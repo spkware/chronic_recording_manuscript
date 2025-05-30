@@ -102,7 +102,7 @@ class DredgeSpikeDetection(dj.Manual):
             keys.append(key)
         return pd.DataFrame(keys)
     
-    def plot_raster(self, subject, session_name, probe_num, shank_num,**kwargs):
+    def plot_raster(self, subject_name, session_name, probe_num, shank_num,**kwargs):
         from spks.viz import plot_drift_raster
 
         xlims = [(-1000, 175),
@@ -110,7 +110,7 @@ class DredgeSpikeDetection(dj.Manual):
                  (400, 650),
                  (650, 1200)]
 
-        key = dict(subject_name=subject,
+        key = dict(subject_name=subject_name,
                        session_name=session_name,
                        probe_num=probe_num)
         spikes_query = (DredgeSpikeDetection & key)
@@ -135,7 +135,7 @@ class DredgeSpikeDetection(dj.Manual):
         plot_drift_raster(t_seconds, depth_um, amps,**kwargs)
         
 
-    def extract_spikes(self, subject, session_name, probe_num):
+    def extract_spikes(self, subject_name, session_name, probe_num):
         """
         This function will download the binary file for a probe, perform spike extraction/localization,
         save those to .npy files, and add these files to the AnalysiFile and DredgeSpikeDetection tables.
@@ -149,20 +149,20 @@ class DredgeSpikeDetection(dj.Manual):
         fname = 'peaks.npy'
         fname2 = 'peak_locations.npy'
 
-        key = dict(subject_name=subject,
+        key = dict(subject_name=subject_name,
                        session_name=session_name,
                        probe_num=probe_num)
         has_file_on_database = len(self & key) == 1
         if has_file_on_database:
-            print('Spike detection already ran for',subject,session_name)
+            print('Spike detection already ran for',subject_name,session_name)
             return
             #peaks = np.load(path / fname)
             #peak_locations = np.load(path / fname2)
             #return peaks, peak_locations
         else:
-            print('Running spike detection for',subject,session_name)
+            print('Running spike detection for',subject_name,session_name)
             files2get = (EphysRecording().ProbeFile() & dict(probe_num=probe_num,
-                                                         subject_name=subject,
+                                                         subject_name=subject_name,
                                                          session_name=session_name))
             path = (File() & files2get).get()[0].parent # get files from s3 if not local
             print(path)
@@ -545,6 +545,12 @@ class IBLMatchedInsertion(dj.Manual):
     ---
     pid : varchar(255)
     '''
-    def return_schema_session(self):
-        # TODO: will give the query for the corresponding ephys recording in the database
-        raise NotImplementedError()
+    def to_ephys_session(self):
+        from one.api import ONE
+        one = ONE(mode='remote')
+        matched_insertions = self.fetch(as_dict=True)
+        sub = [one.eid2path(one.pid2eid(s['pid'])[0]) for s in matched_insertions]
+        subs = [dict(subject_name=f'_{Path(s).parts[8]}',
+                     session_name=str(Path(*Path(s).parts[9:11]))) for s in sub]
+        return EphysRecording() & subs
+
