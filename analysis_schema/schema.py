@@ -312,6 +312,9 @@ class DredgeMotionEstimate(dj.Manual):
             n_shanks = (EphysRecording.ProbeSetting * Probe & k).fetch1('probe_n_shanks')
             if len(self & k) < n_shanks: # if all shanks are already in the table, skip
                 keys_to_insert.append(k)
+        if len(keys_to_insert) == 0:
+            print(f'No new sessions to insert for subject {subject}, probe {probe_num}, dredge_params_id {dredge_params_id}')
+            return
         #for key in tqdm(keys_to_insert):
         #    self.insert_one_session(key, min_spike_depth, max_spike_depth)
         #TODO: make this work so that each worker just populates one shank, rather than looping inside the worker
@@ -545,12 +548,40 @@ class IBLMatchedInsertion(dj.Manual):
     ---
     pid : varchar(255)
     '''
+    def _get_ephys_session(self):
+        query = self.EphysRecording() & self
+        if len(query):
+            query = query.fetch(as_dict=True)
+            for q in query:
+                q['subject_name'] = q['matched_subject_name']
+                del q['matched_subject_name']
+            return EphysRecording() & query
+        
     def to_ephys_session(self):
+        query = self._get_ephys_session()
+        if query is not None:
+            return query
+                
         from one.api import ONE
         one = ONE(mode='remote')
         matched_insertions = self.fetch(as_dict=True)
         sub = [one.eid2path(one.pid2eid(s['pid'])[0]) for s in matched_insertions]
         subs = [dict(subject_name=f'_{Path(s).parts[8]}',
                      session_name=str(Path(*Path(s).parts[9:11]))) for s in sub]
-        return EphysRecording() & subs
+        subs = (EphysRecording() & subs).fetch(as_dict=True)
+        for m,s in zip(matched_insertions,subs):
+            s['matched_subject_name'] = s['subject_name']
+            s['probe_id'] = m['probe_id']
+            s['procedure_datetime'] = m['procedure_datetime']
+            s['procedure_type'] = m['procedure_type']
+            s['subject_name'] = m['subject_name']
+        print('Pulling session data from Alyx to insert')
+        self.EphysRecording().insert(subs, skip_duplicates=False, ignore_extra_fields=True)
+        return self._get_ephys_session()
+    class EphysRecording(dj.Part):
+        definition = '''
+        -> master
+        ---
+        -> EphysRecording.proj(matched_subject_name='subject_name')
+        '''
 
