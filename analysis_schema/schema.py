@@ -145,8 +145,9 @@ class DredgeSpikeDetection(dj.Manual):
         from spikeinterface.sortingcomponents.peak_detection import detect_peaks
         from spikeinterface.sortingcomponents.peak_localization import localize_peaks
         from spikeinterface.core import set_global_job_kwargs,set_global_tmp_folder
-        set_global_job_kwargs(mp_context = "fork")
-        set_global_tmp_folder(str(prefs['scratch_path']/'spikeinterface_cache'))
+        set_global_job_kwargs(mp_context = "spawn")
+
+        si.set_global_tmp_folder(str(prefs['scratch_path']/'spikeinterface_cache'))
         fname = 'peaks.npy'
         fname2 = 'peak_locations.npy'
 
@@ -195,7 +196,7 @@ class DredgeSpikeDetection(dj.Manual):
                 peaks,
                 method="monopolar_triangulation",
                 #local_radius_um=75,
-                n_jobs=-1)
+                n_jobs=0.7)
             import shutil
             shutil.rmtree(path/"preprocessed")
             np.save(path / fname, peaks, allow_pickle=False)
