@@ -547,6 +547,7 @@ class LocomotionBehaviorTreadmill(dj.Manual):
 class IBLMatchedInsertion(dj.Manual):
     definition = '''
     -> ProbeInsertion
+    match_number : int
     ---
     pid : varchar(255)
     '''
@@ -568,8 +569,9 @@ class IBLMatchedInsertion(dj.Manual):
         one = ONE(mode='remote')
         matched_insertions = self.fetch(as_dict=True)
         sub = [one.eid2path(one.pid2eid(s['pid'])[0]) for s in matched_insertions]
-        subs = [dict(subject_name=f'_{Path(s).parts[8]}',
-                     session_name=str(Path(*Path(s).parts[9:11]))) for s in sub]
+        subs = [dict(subject_name=f'_{Path(s).parts[-3]}',
+                     #session_name=str(Path(*Path(s).parts[-2:]))) for s in sub]
+                     session_name=f'{Path(s).parts[-2]}/{Path(s).parts[-1]}') for s in sub]
         subs = (EphysRecording() & subs).fetch(as_dict=True)
         for m,s in zip(matched_insertions,subs):
             s['matched_subject_name'] = s['subject_name']
@@ -577,6 +579,7 @@ class IBLMatchedInsertion(dj.Manual):
             s['procedure_datetime'] = m['procedure_datetime']
             s['procedure_type'] = m['procedure_type']
             s['subject_name'] = m['subject_name']
+            s['match_number'] = m['match_number']
         print('Pulling session data from Alyx to insert')
         self.EphysRecording().insert(subs, skip_duplicates=False, ignore_extra_fields=True)
         return self._get_ephys_session()
