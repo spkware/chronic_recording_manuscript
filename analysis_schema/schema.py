@@ -569,24 +569,33 @@ class IBLMatchedInsertion(dj.Manual):
         one = ONE(mode='remote')
         matched_insertions = self.fetch(as_dict=True)
         sub = [one.eid2path(one.pid2eid(s['pid'])[0]) for s in matched_insertions]
+        probenums = [int(one.pid2eid(s['pid'])[1].strip('probe')) for s in matched_insertions]
         subs = [dict(subject_name=f'_{Path(s).parts[-3]}',
                      #session_name=str(Path(*Path(s).parts[-2:]))) for s in sub]
                      session_name=f'{Path(s).parts[-2]}/{Path(s).parts[-1]}') for s in sub]
-        subs = (EphysRecording() & subs).fetch(as_dict=True)
-        for m,s in zip(matched_insertions,subs):
+        #subs = (EphysRecording() & subs).fetch(as_dict=True)
+        newsubs = []
+        for i,(m,s) in enumerate(zip(matched_insertions,subs)):
+            if len(EphysRecording() & s) == 0:
+                print(f'No ephys session found for {s["subject_name"]} {s["session_name"]}, skipping')
+                continue
+            s = (EphysRecording() & s).fetch1()  # fetch the ephys session
             s['matched_subject_name'] = s['subject_name']
             s['probe_id'] = m['probe_id']
             s['procedure_datetime'] = m['procedure_datetime']
             s['procedure_type'] = m['procedure_type']
             s['subject_name'] = m['subject_name']
             s['match_number'] = m['match_number']
+            s['matched_probe_num'] = probenums[i]
+            newsubs.append(s)
         print('Pulling session data from Alyx to insert')
-        self.EphysRecording().insert(subs, skip_duplicates=False, ignore_extra_fields=True)
+        self.EphysRecording().insert(newsubs, skip_duplicates=False, ignore_extra_fields=True)
         return self._get_ephys_session()
     class EphysRecording(dj.Part):
         definition = '''
         -> master
         ---
+        matched_probe_num : smallint
         -> EphysRecording.proj(matched_subject_name='subject_name')
         '''
 
