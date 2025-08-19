@@ -147,7 +147,7 @@ class DredgeSpikeDetection(dj.Manual):
         from spikeinterface.core import set_global_job_kwargs,set_global_tmp_folder
         set_global_job_kwargs(mp_context = "spawn")
 
-        si.set_global_tmp_folder(str(prefs['scratch_path']/'spikeinterface_cache'))
+        si.set_global_tmp_folder(str(Path(prefs['scratch_path'])/'spikeinterface_cache'))
         fname = 'peaks.npy'
         fname2 = 'peak_locations.npy'
 
@@ -172,8 +172,8 @@ class DredgeSpikeDetection(dj.Manual):
             # preprocessing
             rec = si.read_cbin_ibl(path)
             # restrict to channels with activity in this recording
-            #rec = rec.channel_slice(rec.channel_ids[:300])
-            rec = rec.channel_slice(rec.channel_ids[:-1]) # remove sync
+            #rec = rec.channel_slice(rec.channel_ids[:-1]) # remove sync
+            # no need to remove sync (that is handled by SI)
             rec = si.bandpass_filter(rec)
             rec = si.phase_shift(rec)
             rec = si.common_reference(rec)
