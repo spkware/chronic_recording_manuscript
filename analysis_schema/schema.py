@@ -303,10 +303,14 @@ class DredgeMotionEstimate(dj.Manual):
 
             self.insert1(key, skip_duplicates=True)
     
-    def populate_subject(self,subject, probe_num, dredge_params_id, min_spike_depth=None, max_spike_depth=None, n_workers=1):
+    def populate_chronic_subject(self,subject, probe_num, dredge_params_id, min_spike_depth=None, max_spike_depth=None, n_workers=1):
         from tqdm import tqdm
         from multiprocessing.pool import Pool
         from functools import partial
+        '''
+        This function should only be called for chronic insertions, where the insertion is the same across all recordings for this probe-subject combination.
+        Otherwise it will use incorrect depth parameters for acute sessions where the same probe may have been driven into different craniotomies/depths for acute recordings.
+        '''
 
         keys = (DredgeSpikeDetection * DredgeParams & dict(probe_num=probe_num, subject_name=subject, params_id=dredge_params_id)).fetch('KEY')
         keys_to_insert = []
