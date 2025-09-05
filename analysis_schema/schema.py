@@ -256,7 +256,7 @@ class DredgeMotionEstimate(dj.Manual):
              (400, 650),
              (650, 1200)]
 
-    def insert_one_session(self, key, min_spike_depth, max_spike_depth):
+    def insert_one_session(self, key, params_id, min_spike_depth, max_spike_depth):
         from dredge.dredge_ap import register
         #key = key.copy()
         n_shanks = (EphysRecording.ProbeSetting * Probe & key).fetch1('probe_n_shanks')
@@ -276,7 +276,7 @@ class DredgeMotionEstimate(dj.Manual):
             depth_um = peak_locations['y']
             x = peak_locations['x']
         
-            dredge_params = (DredgeParams & key).fetch1() 
+            dredge_params = (DredgeParams & dict(params_id=params_id)).fetch1() 
 
             #SpikeDepthLims() & key
             good_y = np.vstack([depth_um >= ymin, depth_um <= ymax])
@@ -292,8 +292,10 @@ class DredgeMotionEstimate(dj.Manual):
 
             dredge_params.pop('params_id')
             dredge_params.pop('max_disp_um')
+            print(f'Running DREDGE for {key["subject_name"]} {key["session_name"]} shank {shank} with {len(t_seconds)} spikes')
             motion_est, _ = register(amps, depth_um, t_seconds, pbar=False, **dredge_params)
 
+            key['params_id'] = params_id
             key['displacement'] = motion_est.displacement
             key['spatial_bin_centers_um'] = motion_est.spatial_bin_centers_um
             key['time_bin_centers_s'] = motion_est.time_bin_centers_s
@@ -324,7 +326,7 @@ class DredgeMotionEstimate(dj.Manual):
         #for key in tqdm(keys_to_insert):
         #    self.insert_one_session(key, min_spike_depth, max_spike_depth)
         #TODO: make this work so that each worker just populates one shank, rather than looping inside the worker
-        worker = partial(self.insert_one_session, min_spike_depth=min_spike_depth, max_spike_depth=max_spike_depth)
+        worker = partial(self.insert_one_session, params_id=dredge_params_id, min_spike_depth=min_spike_depth, max_spike_depth=max_spike_depth)
         with Pool(n_workers) as p:
             _ = list(tqdm(p.imap(worker, keys_to_insert), total=len(keys_to_insert)))
 
