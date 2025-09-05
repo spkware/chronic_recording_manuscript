@@ -9,8 +9,8 @@ mpl.rcParams.update({
     "svg.fonttype": 'none',   # Keep text as text in SVG
     
     # Font settings
-    "font.family": "sans-serif",
-    "font.sans-serif": ["Arial"],  # Change to your preferred font
+    #"font.family": "sans-serif",
+    #"font.sans-serif": ["Arial"],  # Change to your preferred font
     "font.size": 12,          # Base font size
     
     # Axes and ticks
