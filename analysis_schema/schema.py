@@ -1,7 +1,7 @@
 from labdata.schema import *
 from .schema_utils import * 
 
-paperschema = dj.schema('paper_2024_chronic_holder')
+paperschema = get_user_schema()
 
 __all__ = ['paperschema','IncludedSubjects',
            'SelectedVideoSessions',
