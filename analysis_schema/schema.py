@@ -13,7 +13,11 @@ __all__ = ['paperschema','IncludedSubjects',
            'DredgeParams',
            'ConcatenatedSpikes',
            'LocomotionBehaviorTreadmill',
-           'IBLMatchedInsertion',]
+           'IBLMatchedInsertion',
+           'ThreeChamberBehaviorAnnotation', 
+           'BehaviorSubjects',
+           'OpenFieldAnnotation',
+           'HomeCageIntruderAnnotation']
 @paperschema
 class IncludedSubjects(dj.Manual):
     # Lists the mice included in the study
@@ -58,7 +62,6 @@ class SortingChannelMAD(dj.Computed):
 
 @paperschema
 class DredgeSpikeDetection(dj.Manual):
-    # Table to hold which video sessions were used
     # FIXME: This table accidentally populates a second shank for NP1's sometimes. Use channelmaps and pick the closest shank in the future.
     definition = '''
     -> EphysRecording.ProbeSetting
@@ -134,7 +137,6 @@ class DredgeSpikeDetection(dj.Manual):
             
         plot_drift_raster(t_seconds, depth_um, amps,**kwargs)
         
-
     def extract_spikes(self, subject_name, session_name, probe_num):
         """
         This function will download the binary file for a probe, perform spike extraction/localization,
@@ -605,3 +607,140 @@ class IBLMatchedInsertion(dj.Manual):
         -> EphysRecording.proj(matched_subject_name='subject_name')
         '''
 
+@paperschema
+class BehaviorSubjects(dj.Manual):
+    definition = '''
+    -> Subject
+    ---
+    n_probes                    :  smallint
+    n_headstages                :  smallint
+    label                       :  varchar(20)
+    implant_total_weight = NULL :  float       # total weight of the implant, including cement
+    fixtures_weight = NULL      :  float       # weight of the fixtures+probe+headstage
+    -> [nullable] Note
+    '''
+
+@paperschema
+class ThreeChamberBehaviorAnnotation(dj.Manual):
+    definition = '''
+    -> Dataset
+    ---
+    has_cable = 0                         : bool   # whether a cable was attached
+    climbing_attempts = 0                 : int    # number of climbing attempts
+    climbing_attempts_successful = 0      : int    # number of successfull climbing events
+    time_on_object                        : float  # seconds
+    time_on_social                        : float  # seconds
+    session_duration = NULL               : float 
+    '''
+    class ClimbAttempt(dj.Part):
+        definition = '''
+        -> master
+        attempt_num         : int
+        ---
+        onset_frame = NULL  : int
+        offset_frame = NULL : int
+        success_frame = NULL : int
+        successful = NULL   : smallint
+        '''
+    
+    def plot_climbing_behavior(self,fig = None):
+        df = pd.DataFrame((BehaviorSubjects()*self).fetch())
+        import pylab as plt
+        if fig is None:
+            fig = plt.figure()
+        for i,d in df.iterrows():
+            label1 = None
+            label2 = None
+            if i == 0:
+                label1 = 'attempted'
+                label2 = 'successful'
+            rd = np.random.uniform(-0.15,0.15,2)
+            plt.plot(d.n_probes+rd+np.array([-0.25,0.25]),[d.climbing_attempts,d.climbing_attempts_successful],'-k',clip_on=False)
+            plt.plot(d.n_probes+rd[0]+np.array([-0.25]),d.climbing_attempts,'ok',markerfacecolor = 'w',clip_on=False,ms = 7,label = label1)
+            plt.plot(d.n_probes+rd[1]+np.array([0.25]),d.climbing_attempts_successful,'ko',markerfacecolor = 'gray',ms = 7,clip_on=False,label = label2)
+        plt.ylim([0,60])
+        plt.xticks([0,2,4],['no surgery','2 probes\n1 headstage','4 probes\n2 headstage'],fontsize = 16)
+        plt.yticks([0,20,40,60])
+        plt.ylabel('Number of climbing attempts',fontsize = 16)
+
+        plt.gca().spines[['right', 'top']].set_visible(False)
+    
+    def plot_investigation_behavior(self,fig = None):
+        df = pd.DataFrame((BehaviorSubjects()*self).fetch())
+        import pylab as plt
+        if fig is None:
+            fig = plt.figure()
+        for i,d in df.iterrows():
+            label1 = None
+            label2 = None
+            if i == 0:
+                label1 = 'object'
+                label2 = 'social'
+            rd = np.random.uniform(-0.15,0.15,2)
+            plt.plot(d.n_probes+rd+np.array([-0.25,0.25]),[d.time_on_object,d.time_on_social],'-k',clip_on=False)
+            plt.plot(d.n_probes+rd[0]+np.array([-0.25]),d.time_on_object,'ok',markerfacecolor = 'w',clip_on=False,ms = 7,label = label1)
+            plt.plot(d.n_probes+rd[1]+np.array([0.25]),d.time_on_social,'ko',markerfacecolor = 'gray',ms = 7,clip_on=False,label = label2)
+        plt.ylim([0,60])
+        plt.xticks([0,2,4],['no surgery','2 probes\n1 headstage','4 probes\n2 headstage'],fontsize = 16)
+        plt.yticks([0,40,80,120,160])
+        plt.ylabel('Time investigating (s)',fontsize = 16)
+        plt.ylim([0,200])
+        plt.gca().spines[['right', 'top']].set_visible(False)
+
+@paperschema
+class HomeCageIntruderAnnotation(dj.Manual):
+    definition = '''
+    -> Dataset
+    ---
+    has_cable = 0                         : bool   # whether a cable was attached
+    time_investigating                    : float  # seconds
+    session_duration = NULL               : float 
+    '''
+    def plot(self):
+        df = pd.DataFrame((BehaviorSubjects()*self).fetch())
+        import pylab as plt
+        fig = plt.figure()
+        for i,d in df.iterrows():
+            rd = np.random.uniform(-0.15,0.15,1)
+            plt.plot(d.n_probes+rd[0],d.time_investigating,'ok',markerfacecolor = 'w',clip_on=False,ms = 7)
+        plt.ylim([0,240])
+        plt.xticks([0,2,4],['no surgery','2 probes\n1 headstage','4 probes\n2 headstage'],fontsize = 16)
+        plt.yticks([0,80,160,240])
+        plt.ylabel('Time investigating intruder (s)',fontsize = 16)
+        plt.gca().spines[['right', 'top']].set_visible(False)
+
+@paperschema
+class OpenFieldAnnotation(dj.Manual):
+    definition = '''
+    -> Dataset
+    ---
+    has_cable = 0                         : bool   # whether a cable was attached
+    openfield_speed                       : float  # cm/seconds
+    time_in_center                        : float  # seconds
+    session_duration = NULL               : float 
+    '''
+    def plot_speed(self):
+        df = pd.DataFrame((BehaviorSubjects()*self).fetch())
+        import pylab as plt
+        fig = plt.figure()
+        for i,d in df.iterrows():
+            rd = np.random.uniform(-0.15,0.15,1)
+            plt.plot(d.n_probes+rd[0],d.openfield_speed,'ok',markerfacecolor = 'w',clip_on=False,ms = 7)
+        plt.ylim([0,10])
+        plt.xticks([0,2,4],['no surgery','2 probes\n1 headstage','4 probes\n2 headstage'],fontsize = 16)
+        plt.yticks([0,5,10])
+        plt.ylabel('Average openfield speed (cm/s)',fontsize = 16)
+        plt.gca().spines[['right', 'top']].set_visible(False)
+    
+    def plot_time(self):
+        df = pd.DataFrame((BehaviorSubjects()*self).fetch())
+        import pylab as plt
+        fig = plt.figure()
+        for i,d in df.iterrows():
+            rd = np.random.uniform(-0.15,0.15,1)
+            plt.plot(d.n_probes+rd[0],d.time_in_center,'ok',markerfacecolor = 'w',clip_on=False,ms = 7)
+        plt.ylim([0,180])
+        plt.xticks([0,2,4],['no surgery','2 probes\n1 headstage','4 probes\n2 headstage'],fontsize = 16)
+        plt.yticks([0,80,160])
+        plt.ylabel('Time in center (s)',fontsize = 16)
+        plt.gca().spines[['right', 'top']].set_visible(False)
