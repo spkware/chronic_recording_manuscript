@@ -7,6 +7,7 @@ class SpikeDetectionCompute(BaseCompute):
     name = 'detect'
     url = 'http://github.com/spkware'
     def __init__(self,job_id, project=None, allow_s3 = None, delete_results = True, **kwargs):
+        self.allow_s3 = True
         super(SpikeDetectionCompute,self).__init__(job_id, project = project, allow_s3 = allow_s3)
         self.file_filters = ['.ap.']
         # default parameters
