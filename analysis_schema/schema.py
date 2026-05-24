@@ -134,9 +134,10 @@ class DredgeSpikeDetection(dj.Manual):
         t_seconds = t_seconds[good_x]
         amps = amps[good_x]
         depth_um = depth_um[good_x]
-            
-        plot_drift_raster(t_seconds, depth_um, amps,**kwargs)
-        
+        if len(t_seconds): 
+            plot_drift_raster(t_seconds, depth_um, amps,**kwargs)
+        else:
+            print(f'No spikes for shank {shank_num}')
     def extract_spikes(self, subject_name, session_name, probe_num):
         """
         This function will download the binary file for a probe, perform spike extraction/localization,
@@ -253,16 +254,18 @@ class DredgeMotionEstimate(dj.Manual):
     max_spike_depth_um: float           # spikes above this depth were excluded before running DREDGE
  
     '''
-    xlims = [(-1000, 175),
-             (175, 400),
-             (400, 650),
-             (650, 1200)]
+    xlims = [(-1000, 175), # first shank
+             (175, 400),   # second shank
+             (400, 650),   # third shank
+             (650, 1200)]  # forth shank
 
     def insert_one_session(self, key, params_id, min_spike_depth, max_spike_depth):
         from dredge.dredge_ap import register
         #key = key.copy()
         n_shanks = (EphysRecording.ProbeSetting * Probe & key).fetch1('probe_n_shanks')
         for xlim, shank, ymin, ymax in zip(self.xlims, range(n_shanks), min_spike_depth, max_spike_depth):
+            if ymin is None: # skip
+                continue
             spikes_query = (DredgeSpikeDetection & key)
             #peaks_path = (AnalysisFile & spikes_query.proj(file_path='peaks')).get()[0]
             #peak_locations_path = (AnalysisFile & spikes_query.proj(file_path='peak_locations')).get()[0]
@@ -282,7 +285,7 @@ class DredgeMotionEstimate(dj.Manual):
 
             #SpikeDepthLims() & key
             good_y = np.vstack([depth_um >= ymin, depth_um <= ymax])
-            good_x = np.vstack([x >= xlim[0], x <= xlim[1]])
+            good_x = np.vstack([x >= xlim[0], x <= xlim[1]]) # to filter the x coords for the shank
             inds = np.vstack([good_x, good_y])
             inds = np.all(inds, axis=0)
             if np.sum(inds) == 0:
@@ -517,26 +520,38 @@ class LocomotionBehaviorTreadmill(dj.Manual):
     def insert_session(self,key, ch_sma = 7, ch_encoder0 = 4, ch_encoder1=5):
         # select data
         key = (Dataset() & (EphysRecording() & key)).proj().fetch1()
+        if len(self & key):
+            print(f'{key} already inserted.')
+            return 
         ephys = (DatasetEvents.Digital() & key & 'stream_name = "imec0"').fetch(as_dict = True)
         srate = float((EphysRecording.ProbeSetting() & key & 'probe_num = 0').fetch1('sampling_rate'))
         if not len(ephys):
             print('Could not find sync for probe 0 - check session.')
             return None
-        nidqfiles = (File() & (Dataset.DataFiles() & key & 'file_path LIKE "%.nidq.%"')).get()
-        for f in nidqfiles:
-            if str(f).endswith('.bin'):
-                from spks.spikeglx_utils import load_spikeglx_binary
-                dat,meta = load_spikeglx_binary(f)
-                from spks.sync import unpackbits_gpu
-                onsets,offsets = unpackbits_gpu(dat[:,-1])
+        nidq = (DatasetEvents.Digital() & key & 'stream_name = "nidq"').fetch(as_dict = True)
         from spks.sync import interp1d
-        ni_ap_interp = interp1d(onsets[ch_sma],ephys[0]['event_values'],fill_value='extrapolate')
-        # extract the encoder traces this takes a while, could probably be made faster
-        chA = ni_ap_interp(onsets[ch_encoder0])
-        chB = ni_ap_interp(onsets[ch_encoder1])    
-        position = decode_distance(chA,chB)
-        enc_time = np.arange(0,len(dat)/srate,1/200.) # 200Hz resolution
-        distance = interp1d(chA/srate, position, fill_value='extrapolate')(enc_time)
+        if len(nidq) == 0:
+            nidqfiles = (File() & (Dataset.DataFiles() & key & 'file_path LIKE "%.nidq.%"')).get()
+            for f in nidqfiles:
+                if str(f).endswith('.bin'):
+                    from spks.spikeglx_utils import load_spikeglx_binary
+                    dat,meta = load_spikeglx_binary(f)
+                    from spks.sync import unpackbits_gpu
+                    onsets,offsets = unpackbits_gpu(dat[:,-1])
+                ni_ap_interp = interp1d(onsets[ch_sma],ephys[0]['event_values'],fill_value='extrapolate')
+                # extract the encoder traces this takes a while, could probably be made faster
+                chA = ni_ap_interp(onsets[ch_encoder0])
+                chB = ni_ap_interp(onsets[ch_encoder1])    
+                position = decode_distance(chA,chB)
+                enc_time = np.arange(0,len(dat)/srate,1/200.) # 200Hz resolution
+                distance = interp1d(chA/srate, position, fill_value='extrapolate')(enc_time)
+        else:
+            chA = (DatasetEvents.Digital() & key & 'stream_name = "nidq"' & f'event_name = {ch_encoder0}').fetch1('event_timestamps')
+            chB = (DatasetEvents.Digital() & key & 'stream_name = "nidq"' & f'event_name = {ch_encoder1}').fetch1('event_timestamps')
+            position = decode_distance(chA,chB)
+            enc_time = np.arange(0,(EphysRecording & key).fetch1('recording_duration'),1/200.) # 200Hz resolution
+            distance = interp1d(chA, position, fill_value='extrapolate')(enc_time)
+            
         # smooth with a gaussian
         from scipy.ndimage import gaussian_filter
         factor = 600./40 # roughly the encoder_pulses per cm 
