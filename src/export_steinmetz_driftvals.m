@@ -6,12 +6,10 @@
 clear all
 close all
 clc
+addpath(genpath('/home/mmelin/steinmetz-et-al-2021'))
+%data directory, MUST extract zip first
+processed_folder = '/home/mmelin/steinmetz-et-al-2021/fig2/data';
 
-%please enter your data directory after extracting data.zip 
-processed_folder = 'C:\Data\churchland\steinmetz-et-al-2021\fig2\data';
-
-% please enter directory in case you would like to print some figures
-figure_folder =  'C:\Data\churchland\steinmetz-et-al-2021\tmp';
 %% linear fit
 
 
